@@ -2,9 +2,11 @@ const express = require('express');
 const axios = require('axios');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const paypal = require('@paypal/checkout-server-sdk');
+const path = require('path');
 const app = express();
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../dist')));
 
 const c = process.env.ROBLOX_COOKIE;
 const g = process.env.GROUP_ID;
@@ -104,6 +106,10 @@ app.post('/webhook/paypal', async (req, res) => {
     }
   }
   res.json({ received: true });
+});
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 app.listen(process.env.PORT || 3000);

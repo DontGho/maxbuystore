@@ -13,7 +13,7 @@ export default function App() {
     setM('');
 
     try {
-      const r = await fetch(`${import.meta.env.VITE_API_URL}/api/create-payment`, {
+      const r = await fetch(`/api/create-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: u, amount: parseInt(a), method })
