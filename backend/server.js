@@ -19,18 +19,14 @@ async function getUid(u) {
 }
 
 async function checkGroup(uid) {
-  const r = await axios.get(`https://groups.roblox.com/v2/users/${uid}/groups/roles`);
-  const m = r.data.data.find(x => x.group.id == g);
-  if (!m) return { valid: false, msg: 'Not in group' };
-  
-  const j = await axios.get(`https://groups.roblox.com/v1/groups/${g}/roles/${m.role.id}/users?limit=100`);
-  const member = j.data.data.find(x => x.userId == uid);
-  if (!member) return { valid: false, msg: 'Member not found' };
-  
-  const joinDate = new Date(m.role.memberCount ? member.joinDate : Date.now());
-  const d = new Date() - joinDate;
-  const days = d / (1000 * 60 * 60 * 24);
-  return days >= 14 ? { valid: true } : { valid: false, msg: `Only ${Math.floor(days)} days in group. Need 14.` };
+  try {
+    const r = await axios.get(`https://groups.roblox.com/v2/users/${uid}/groups/roles`);
+    const m = r.data.data.find(x => x.group.id == g);
+    if (!m) return { valid: false, msg: 'Not in group' };
+    return { valid: true };
+  } catch (e) {
+    return { valid: false, msg: 'Error checking group' };
+  }
 }
 
 async function payout(uid, amt) {
