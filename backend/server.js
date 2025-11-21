@@ -23,11 +23,12 @@ async function checkGroup(uid) {
   const m = r.data.data.find(x => x.group.id == g);
   if (!m) return { valid: false, msg: 'Not in group' };
   
-  const j = await axios.get(`https://groups.roblox.com/v1/groups/${g}/users?limit=100`);
-  const u = j.data.data.find(x => x.user.userId == uid);
-  if (!u) return { valid: false, msg: 'Member not found' };
+  const j = await axios.get(`https://groups.roblox.com/v1/groups/${g}/roles/${m.role.id}/users?limit=100`);
+  const member = j.data.data.find(x => x.userId == uid);
+  if (!member) return { valid: false, msg: 'Member not found' };
   
-  const d = new Date() - new Date(u.user.joinDate);
+  const joinDate = new Date(m.role.memberCount ? member.joinDate : Date.now());
+  const d = new Date() - joinDate;
   const days = d / (1000 * 60 * 60 * 24);
   return days >= 14 ? { valid: true } : { valid: false, msg: `Only ${Math.floor(days)} days in group. Need 14.` };
 }
