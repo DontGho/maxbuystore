@@ -3,35 +3,29 @@ import { AlertCircle, CheckCircle, Loader2, Home, Sparkles } from 'lucide-react'
 
 function SuccessPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center p-4">
-      <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-12 max-w-md w-full text-center border border-emerald-100/50">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg p-12 max-w-md w-full text-center border border-gray-200">
         <div className="mb-6 flex justify-center">
-          <div className="relative">
-            <div className="absolute inset-0 bg-emerald-400 rounded-full blur-xl opacity-50 animate-pulse"></div>
-            <div className="relative bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full p-5">
-              <CheckCircle size={72} className="text-white" strokeWidth={2.5} />
-            </div>
+          <div className="bg-green-100 rounded-full p-5">
+            <CheckCircle size={64} className="text-green-600" strokeWidth={2} />
           </div>
         </div>
         
-        <h1 className="text-4xl font-bold text-slate-800 mb-3">Payment Complete!</h1>
-        <p className="text-slate-600 text-lg mb-2">Thank you for your purchase</p>
-        <p className="text-slate-500 mb-8">Your Robux will be delivered within 24 hours</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-3">Payment Complete</h1>
+        <p className="text-gray-600 text-base mb-2">Thank you for your purchase</p>
+        <p className="text-gray-500 text-sm mb-8">Your Robux will be delivered within 24 hours</p>
         
-        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-6 mb-8 border border-emerald-200/50 shadow-sm">
-          <div className="flex items-center justify-center gap-2 mb-3">
-            <Sparkles size={20} className="text-emerald-500" />
-            <p className="text-sm font-semibold text-slate-700">What's Next?</p>
-          </div>
-          <p className="text-sm text-slate-600 mb-2">Check your email for receipt</p>
-          <p className="text-sm text-slate-600">Delivery within 24 hours</p>
+        <div className="bg-gray-50 rounded-lg p-6 mb-8 border border-gray-200">
+          <p className="text-sm font-semibold text-gray-700 mb-3">What's Next?</p>
+          <p className="text-sm text-gray-600 mb-2">Check your email for receipt</p>
+          <p className="text-sm text-gray-600">Delivery within 24 hours</p>
         </div>
         
         <a 
           href="/"
-          className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold px-8 py-4 rounded-xl transition-all shadow-lg shadow-emerald-200/50 hover:shadow-xl hover:shadow-emerald-300/50 hover:-translate-y-0.5"
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
         >
-          <Home size={20} />
+          <Home size={18} />
           Back to Home
         </a>
       </div>
@@ -41,26 +35,23 @@ function SuccessPage() {
 
 function CancelPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center p-4">
-      <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl p-12 max-w-md w-full text-center border border-orange-100/50">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg p-12 max-w-md w-full text-center border border-gray-200">
         <div className="mb-6 flex justify-center">
-          <div className="relative">
-            <div className="absolute inset-0 bg-orange-400 rounded-full blur-xl opacity-40"></div>
-            <div className="relative bg-gradient-to-br from-orange-400 to-amber-500 rounded-full p-5">
-              <AlertCircle size={72} className="text-white" strokeWidth={2.5} />
-            </div>
+          <div className="bg-orange-100 rounded-full p-5">
+            <AlertCircle size={64} className="text-orange-600" strokeWidth={2} />
           </div>
         </div>
         
-        <h1 className="text-4xl font-bold text-slate-800 mb-3">Payment Cancelled</h1>
-        <p className="text-slate-600 text-lg mb-2">No charges were made</p>
-        <p className="text-slate-500 mb-8">Feel free to try again anytime</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-3">Payment Cancelled</h1>
+        <p className="text-gray-600 text-base mb-2">No charges were made</p>
+        <p className="text-gray-500 text-sm mb-8">Feel free to try again anytime</p>
         
         <a 
           href="/"
-          className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-8 py-4 rounded-xl transition-all shadow-lg shadow-orange-200/50 hover:shadow-xl hover:shadow-orange-300/50 hover:-translate-y-0.5"
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
         >
-          <Home size={20} />
+          <Home size={18} />
           Return Home
         </a>
       </div>
