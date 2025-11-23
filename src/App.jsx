@@ -67,7 +67,7 @@ export default function App() {
       const d = await r.json();
       
       if (d.success) {
-        setVerified(`✓ ${d.itemType} verified! Price is correct: ${d.price} R$`);
+        setVerified(`✓ ${d.itemType} verified! Price: ${d.price} R$ (Required: ${Math.ceil(parseInt(a) / 0.7)} R$)`);
       } else {
         setVerified('✗ ' + d.error);
       }
@@ -111,7 +111,7 @@ export default function App() {
 
   const t = (parseInt(a) || 0) / 1000 * p;
   const validAmount = parseInt(a) >= 1000;
-  const requiredPrice = validAmount ? parseInt(a) : 0;
+  const requiredPrice = validAmount ? Math.ceil(parseInt(a) / 0.7) : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 flex items-center justify-center p-6">
@@ -147,7 +147,7 @@ export default function App() {
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-red-500">•</span>
-                <span>Set the price to EXACTLY the Robux amount you want</span>
+                <span>Set the price to the amount shown below</span>
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-red-500">•</span>
@@ -226,10 +226,10 @@ export default function App() {
               {a && validAmount && (
                 <div className="mt-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-yellow-400 font-medium">⚠️ Set your item price to EXACTLY:</span>
+                    <span className="text-sm text-yellow-400 font-medium">⚠️ Set your item price to exactly:</span>
                     <span className="text-xl font-bold text-yellow-400">{requiredPrice} R$</span>
                   </div>
-                  <p className="text-xs text-yellow-500 mt-1">Must match exactly - we'll buy at this price</p>
+                  <p className="text-xs text-yellow-500 mt-1">This accounts for Roblox's 30% fee</p>
                 </div>
               )}
               {a && !validAmount && (
