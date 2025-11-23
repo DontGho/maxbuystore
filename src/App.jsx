@@ -9,7 +9,7 @@ export default function App() {
   const [m, setM] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState('');
-  const p = 5.50;
+  const p = 7.39;
 
   const verifyShirt = async () => {
     if (!u || !shirt) {

@@ -145,8 +145,38 @@ app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req,
 
 app.post('/webhook/paypal', async (req, res) => {
   try {
-    const request = new paypal.orders.OrdersCaptureRequest(req.body.resource.id);
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    const event = req.body;
+    
+    const verifyRequest = {
+      auth_algo: req.headers['paypal-auth-algo'],
+      cert_url: req.headers['paypal-cert-url'],
+      transmission_id: req.headers['paypal-transmission-id'],
+      transmission_sig: req.headers['paypal-transmission-sig'],
+      transmission_time: req.headers['paypal-transmission-time'],
+      webhook_id: webhookId,
+      webhook_event: event
+    };
+    
+    const verifyResponse = await axios.post(
+      'https://api.paypal.com/v1/notifications/verify-webhook-signature',
+      verifyRequest,
+      {
+        auth: {
+          username: process.env.PAYPAL_CLIENT_ID,
+          password: process.env.PAYPAL_SECRET
+        }
+      }
+    );
+    
+    if (verifyResponse.data.verification_status !== 'SUCCESS') {
+      return res.status(400).json({ error: 'Invalid webhook' });
+    }
+    
+    const orderId = req.body.resource.id;
+    const request = new paypal.orders.OrdersCaptureRequest(orderId);
     const capture = await ppClient.execute(request);
+    
     if (capture.result.status === 'COMPLETED') {
       console.log('PayPal payment completed - manually buy the shirt');
     }
