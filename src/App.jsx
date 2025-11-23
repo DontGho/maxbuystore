@@ -49,6 +49,11 @@ export default function App() {
       return;
     }
     
+    if (!a || parseInt(a) < 1000) {
+      setVerified('Enter Robux amount first (minimum 1,000)');
+      return;
+    }
+    
     setVerifying(true);
     setVerified('');
     
@@ -56,13 +61,13 @@ export default function App() {
       const r = await fetch(`/api/verify-item`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, itemUrl })
+        body: JSON.stringify({ username: u, itemUrl, amount: parseInt(a) })
       });
       
       const d = await r.json();
       
       if (d.success) {
-        setVerified(`✓ ${d.itemType} verified! Price: ${d.price} Robux`);
+        setVerified(`✓ ${d.itemType} verified! Price: ${d.price} R$ (Required: ${Math.ceil(parseInt(a) / 0.7)} R$)`);
       } else {
         setVerified('✗ ' + d.error);
       }
@@ -74,6 +79,12 @@ export default function App() {
   };
 
   const h = async (method) => {
+    if (!verified.includes('✓')) {
+      setM('Please verify your item first');
+      setS('error');
+      return;
+    }
+    
     setS('loading');
     setM('');
 
@@ -100,6 +111,7 @@ export default function App() {
 
   const t = (parseInt(a) || 0) / 1000 * p;
   const validAmount = parseInt(a) >= 1000;
+  const requiredPrice = validAmount ? Math.ceil(parseInt(a) / 0.7) : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 flex items-center justify-center p-6">
@@ -139,7 +151,7 @@ export default function App() {
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-red-500">•</span>
-                <span>Paste item link and complete payment</span>
+                <span>Paste item link and verify before payment</span>
               </div>
             </div>
             <a 
@@ -202,16 +214,22 @@ export default function App() {
               <input
                 type="number"
                 value={a}
-                onChange={(e) => setA(e.target.value)}
+                onChange={(e) => {
+                  setA(e.target.value);
+                  setVerified(''); // Reset verification when amount changes
+                }}
                 className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition placeholder-zinc-600"
                 placeholder="1000"
                 min="1000"
                 step="100"
               />
               {a && validAmount && (
-                <div className="mt-3 flex items-center justify-between bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3">
-                  <span className="text-sm text-zinc-500">Set item price to:</span>
-                  <span className="text-lg font-bold text-red-500">{Math.ceil(parseInt(a) / 0.7)} R$</span>
+                <div className="mt-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-yellow-400 font-medium">⚠️ Set your item price to:</span>
+                    <span className="text-xl font-bold text-yellow-400">{requiredPrice} R$</span>
+                  </div>
+                  <p className="text-xs text-yellow-500 mt-1">This accounts for Roblox's 30% fee</p>
                 </div>
               )}
               {a && !validAmount && (
@@ -235,7 +253,7 @@ export default function App() {
               />
               <button
                 onClick={verifyItem}
-                disabled={verifying || !u || !itemUrl}
+                disabled={verifying || !u || !itemUrl || !validAmount}
                 className="mt-3 w-full bg-zinc-800 hover:bg-zinc-750 disabled:opacity-50 text-zinc-300 font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 border border-zinc-700"
               >
                 {verifying ? (
@@ -245,15 +263,19 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    Verify Item
+                    Verify Item & Price
                     <ArrowRight size={16} />
                   </>
                 )}
               </button>
               {verified && (
-                <p className={`mt-3 text-sm ${verified.includes('✓') ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`mt-3 p-3 rounded-lg text-sm ${
+                  verified.includes('✓') 
+                    ? 'bg-green-500/10 border border-green-500/30 text-green-400' 
+                    : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                }`}>
                   {verified}
-                </p>
+                </div>
               )}
             </div>
 
@@ -267,16 +289,16 @@ export default function App() {
             <div className="grid grid-cols-2 gap-3 pt-2">
               <button
                 onClick={() => h('stripe')}
-                disabled={s === 'loading' || !u || !validAmount || !itemUrl}
+                disabled={s === 'loading' || !u || !validAmount || !itemUrl || !verified.includes('✓')}
                 className="bg-red-600 hover:bg-red-500 disabled:bg-zinc-800 disabled:opacity-50 text-white font-semibold py-4 rounded-lg transition"
-                style={{ boxShadow: s === 'loading' || !u || !validAmount || !itemUrl ? 'none' : '0 4px 16px rgba(239, 68, 68, 0.3)' }}
+                style={{ boxShadow: s === 'loading' || !u || !validAmount || !itemUrl || !verified.includes('✓') ? 'none' : '0 4px 16px rgba(239, 68, 68, 0.3)' }}
               >
                 {s === 'loading' ? 'Processing...' : 'Pay with Card'}
               </button>
               
               <button
                 onClick={() => h('paypal')}
-                disabled={s === 'loading' || !u || !validAmount || !itemUrl}
+                disabled={s === 'loading' || !u || !validAmount || !itemUrl || !verified.includes('✓')}
                 className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:opacity-50 text-white font-semibold py-4 rounded-lg transition"
               >
                 {s === 'loading' ? 'Processing...' : 'PayPal'}

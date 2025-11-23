@@ -37,7 +37,6 @@ async function getItemInfo(url) {
     id = match[1] || match[2];
     type = 'Game Pass';
     
-    // For game passes, use the gamepass API to get the correct creator
     try {
       const r = await axios.get(`https://apis.roblox.com/game-passes/v1/game-passes/${id}/product-info`);
       return { 
@@ -77,6 +76,7 @@ async function getItemInfo(url) {
       itemType: type 
     };
   } catch (e) {
+    console.error('Asset fetch error:', e.message);
     return null;
   }
 }
@@ -144,7 +144,7 @@ app.post('/api/verify-user', async (req, res) => {
 
 app.post('/api/verify-item', async (req, res) => {
   try {
-    const { username, itemUrl } = req.body;
+    const { username, itemUrl, amount } = req.body;
     
     const uid = await getUid(username);
     if (!uid) return res.json({ success: false, error: 'User not found' });
@@ -156,6 +156,21 @@ app.post('/api/verify-item', async (req, res) => {
     
     if (creatorId != uid) {
       return res.json({ success: false, error: `Item not owned by this user. Creator ID: ${creatorId}, User ID: ${uid}` });
+    }
+    
+    // Check price if amount is provided
+    if (amount) {
+      const requiredPrice = Math.ceil(amount / 0.7);
+      console.log(`Item price: ${item.price}, Required price: ${requiredPrice}`);
+      
+      if (item.price < requiredPrice) {
+        return res.json({ 
+          success: false, 
+          error: `Item price too low! Current: ${item.price} R$ | Required: ${requiredPrice} R$`,
+          currentPrice: item.price,
+          requiredPrice: requiredPrice
+        });
+      }
     }
     
     res.json({ success: true, price: item.price, itemType: item.itemType });
@@ -186,8 +201,14 @@ app.post('/api/create-payment', async (req, res) => {
     }
     
     const requiredPrice = Math.ceil(amount / 0.7);
+    
+    console.log(`Payment attempt - Amount: ${amount} R$, Item price: ${item.price} R$, Required: ${requiredPrice} R$`);
+    
     if (item.price < requiredPrice) {
-      return res.json({ success: false, error: `Item price too low. Set to ${requiredPrice} Robux` });
+      return res.json({ 
+        success: false, 
+        error: `Item price is too low! Your item is priced at ${item.price} R$ but needs to be at least ${requiredPrice} R$. Please update the item price on Roblox.` 
+      });
     }
     
     const price = (amount / 1000) * 7.39;
