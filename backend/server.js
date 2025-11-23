@@ -3,6 +3,7 @@ const axios = require('axios');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const paypal = require('@paypal/checkout-server-sdk');
 const path = require('path');
+const fs = require('fs');
 const app = express();
 
 app.use(express.json());
@@ -17,6 +18,15 @@ async function getUid(u) {
   return r.data.data[0]?.id;
 }
 
+async function getUserAvatar(uid) {
+  try {
+    const r = await axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${uid}&size=150x150&format=Png&isCircular=false`);
+    return r.data.data[0]?.imageUrl;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function getItemInfo(url) {
   let id;
   let type;
@@ -26,6 +36,21 @@ async function getItemInfo(url) {
     if (!match) return null;
     id = match[1] || match[2];
     type = 'Game Pass';
+    
+    // For game passes, use the gamepass API to get the correct creator
+    try {
+      const r = await axios.get(`https://apis.roblox.com/game-passes/v1/game-passes/${id}/product-info`);
+      return { 
+        id, 
+        price: r.data.PriceInRobux, 
+        creator: { Name: r.data.Creator.Name },
+        creatorId: r.data.Creator.Id,
+        itemType: type 
+      };
+    } catch (e) {
+      console.error('Game pass fetch error:', e.message);
+      return null;
+    }
   } else if (url.includes('catalog')) {
     const match = url.match(/catalog\/(\d+)/);
     if (!match) return null;
@@ -100,6 +125,22 @@ function logPurchase(data) {
   logs.push(log);
   fs.writeFileSync(logFile, JSON.stringify(logs, null, 2));
 }
+
+app.post('/api/verify-user', async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    const uid = await getUid(username);
+    if (!uid) return res.json({ success: false, error: 'User not found' });
+    
+    const avatar = await getUserAvatar(uid);
+    
+    res.json({ success: true, userId: uid, avatar });
+  } catch (e) {
+    console.error(e);
+    res.json({ success: false, error: 'Error verifying user' });
+  }
+});
 
 app.post('/api/verify-item', async (req, res) => {
   try {

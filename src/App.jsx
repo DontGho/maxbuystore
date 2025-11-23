@@ -9,7 +9,39 @@ export default function App() {
   const [m, setM] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState('');
+  const [userVerified, setUserVerified] = useState(false);
+  const [userAvatar, setUserAvatar] = useState('');
+  const [verifyingUser, setVerifyingUser] = useState(false);
   const p = 7.39;
+
+  const verifyUser = async () => {
+    if (!u) return;
+    
+    setVerifyingUser(true);
+    setUserVerified(false);
+    setUserAvatar('');
+    
+    try {
+      const r = await fetch(`/api/verify-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u })
+      });
+      
+      const d = await r.json();
+      
+      if (d.success) {
+        setUserVerified(true);
+        setUserAvatar(d.avatar);
+      } else {
+        setUserVerified(false);
+      }
+    } catch (e) {
+      setUserVerified(false);
+    }
+    
+    setVerifyingUser(false);
+  };
 
   const verifyItem = async () => {
     if (!u || !itemUrl) {
@@ -124,16 +156,43 @@ export default function App() {
               <label className="block text-sm font-medium text-zinc-400 mb-2">
                 Roblox Username
               </label>
-              <input
-                type="text"
-                value={u}
-                onChange={(e) => {
-                  setU(e.target.value);
-                  setVerified('');
-                }}
-                className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition placeholder-zinc-600"
-                placeholder="Enter your username"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={u}
+                  onChange={(e) => {
+                    setU(e.target.value);
+                    setVerified('');
+                    setUserVerified(false);
+                    setUserAvatar('');
+                  }}
+                  className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition placeholder-zinc-600 pr-24"
+                  placeholder="Enter your username"
+                />
+                <button
+                  onClick={verifyUser}
+                  disabled={verifyingUser || !u || userVerified}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-500 disabled:bg-zinc-700 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded transition"
+                >
+                  {verifyingUser ? (
+                    <Loader2 className="animate-spin" size={14} />
+                  ) : userVerified ? (
+                    <CheckCircle size={14} />
+                  ) : (
+                    'Verify'
+                  )}
+                </button>
+              </div>
+              {userVerified && userAvatar && (
+                <div className="mt-3 flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2">
+                  <img 
+                    src={userAvatar} 
+                    alt={u} 
+                    className="w-8 h-8 rounded-full"
+                  />
+                  <span className="text-sm text-green-400">✓ User verified</span>
+                </div>
+              )}
             </div>
 
             <div>
