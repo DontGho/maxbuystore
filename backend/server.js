@@ -6,6 +6,56 @@ const path = require('path');
 const fs = require('fs');
 const app = express();
 
+// IMPORTANT: Stripe webhook MUST come BEFORE express.json()
+app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
+  try {
+    const event = stripe.webhooks.constructEvent(
+      req.body, 
+      req.headers['stripe-signature'], 
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+    
+    if (event.type === 'checkout.session.completed') {
+      const { username, amount, itemId, itemPrice } = event.data.object.metadata;
+      
+      console.log(`Processing purchase for ${username}: ${amount} Robux (Item: ${itemId})`);
+      
+      try {
+        await buyItem(itemId, itemPrice);
+        
+        logPurchase({
+          username,
+          amount,
+          itemId,
+          itemPrice,
+          method: 'stripe',
+          totalPaid: event.data.object.amount_total / 100
+        });
+        
+        console.log(`✓ Successfully bought item ${itemId} for ${itemPrice} Robux`);
+      } catch (buyError) {
+        console.error(`✗ Failed to buy item:`, buyError.message);
+        // Log the failed purchase attempt
+        logPurchase({
+          username,
+          amount,
+          itemId,
+          itemPrice,
+          method: 'stripe',
+          totalPaid: event.data.object.amount_total / 100,
+          status: 'failed',
+          error: buyError.message
+        });
+      }
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error('Webhook error:', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// NOW apply JSON parser for other routes
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
@@ -100,7 +150,7 @@ async function buyItem(itemId, price) {
     });
     return r.data;
   } catch (e) {
-    throw new Error('Failed to buy item');
+    throw new Error('Failed to buy item: ' + e.message);
   }
 }
 
@@ -112,7 +162,9 @@ function logPurchase(data) {
     itemId: data.itemId,
     itemPrice: data.itemPrice,
     paymentMethod: data.method,
-    totalPaid: data.totalPaid
+    totalPaid: data.totalPaid,
+    status: data.status || 'success',
+    error: data.error || null
   };
   
   const logFile = path.join(__dirname, 'purchases.json');
@@ -204,10 +256,10 @@ app.post('/api/create-payment', async (req, res) => {
     
     console.log(`Payment attempt - Amount: ${amount} R$, Item price: ${item.price} R$, Required: ${requiredPrice} R$`);
     
-    if (item.price < requiredPrice) {
+    if (item.price !== requiredPrice) {
       return res.json({ 
         success: false, 
-        error: `Item price is too low! Your item is priced at ${item.price} R$ but needs to be at least ${requiredPrice} R$. Please update the item price on Roblox.` 
+        error: `Item price must be exactly ${requiredPrice} R$ but is currently ${item.price} R$. Please update the item price on Roblox.` 
       });
     }
     
@@ -218,7 +270,7 @@ app.post('/api/create-payment', async (req, res) => {
         payment_method_types: ['card'],
         line_items: [{ price_data: { currency: 'usd', product_data: { name: `${amount} Robux` }, unit_amount: Math.round(price * 100) }, quantity: 1 }],
         mode: 'payment',
-        success_url: `${req.protocol}://${req.get('host')}/success`,
+        success_url: `${req.protocol}://${req.get('host')}/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${req.protocol}://${req.get('host')}/cancel`,
         metadata: { username, amount, itemUrl, itemId: item.id, itemPrice: item.price }
       });
@@ -243,6 +295,136 @@ app.post('/api/create-payment', async (req, res) => {
   }
 });
 
+app.get('/success', async (req, res) => {
+  const sessionId = req.query.session_id;
+  
+  try {
+    if (sessionId) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const { username, amount } = session.metadata;
+      
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Payment Success - MaxBuy</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 min-h-screen flex items-center justify-center p-6">
+          <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg class="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-white mb-2">Payment Successful!</h1>
+            <p class="text-zinc-400 mb-6">Your Robux purchase is being processed</p>
+            <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-6">
+              <p class="text-sm text-zinc-500 mb-1">Username</p>
+              <p class="text-white font-semibold mb-3">${username}</p>
+              <p class="text-sm text-zinc-500 mb-1">Robux Amount</p>
+              <p class="text-white font-semibold">${amount} R$</p>
+            </div>
+            <p class="text-sm text-zinc-500 mb-6">
+              Your Robux will appear in your account within 5-10 minutes.<br>
+              Check your Roblox transactions for confirmation.
+            </p>
+            <a href="/" class="inline-block bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-3 rounded-lg transition">
+              Back to Home
+            </a>
+          </div>
+        </body>
+        </html>
+      `);
+    } else {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Payment Success - MaxBuy</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 min-h-screen flex items-center justify-center p-6">
+          <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg class="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-white mb-2">Payment Successful!</h1>
+            <p class="text-zinc-400 mb-6">Your Robux purchase is being processed</p>
+            <p class="text-sm text-zinc-500 mb-6">
+              Your Robux will appear in your account within 5-10 minutes.
+            </p>
+            <a href="/" class="inline-block bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-3 rounded-lg transition">
+              Back to Home
+            </a>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+  } catch (e) {
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Success - MaxBuy</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+      </head>
+      <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 min-h-screen flex items-center justify-center p-6">
+        <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+          <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg class="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+          </div>
+          <h1 class="text-2xl font-bold text-white mb-2">Payment Successful!</h1>
+          <p class="text-zinc-400 mb-6">Your Robux purchase is being processed</p>
+          <a href="/" class="inline-block bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-3 rounded-lg transition">
+            Back to Home
+          </a>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+});
+
+app.get('/cancel', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Payment Cancelled - MaxBuy</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 min-h-screen flex items-center justify-center p-6">
+      <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+        <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-white mb-2">Payment Cancelled</h1>
+        <p class="text-zinc-400 mb-6">Your payment was cancelled. No charges were made.</p>
+        <a href="/" class="inline-block bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-3 rounded-lg transition">
+          Try Again
+        </a>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
 app.post('/api/purchase-history', async (req, res) => {
   try {
     const { username } = req.body;
@@ -258,32 +440,6 @@ app.post('/api/purchase-history', async (req, res) => {
     res.json({ purchases: userPurchases });
   } catch (e) {
     res.json({ purchases: [] });
-  }
-});
-
-app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
-  try {
-    const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
-    if (event.type === 'checkout.session.completed') {
-      const { username, amount, itemId, itemPrice } = event.data.object.metadata;
-      
-      await buyItem(itemId, itemPrice);
-      
-      logPurchase({
-        username,
-        amount,
-        itemId,
-        itemPrice,
-        method: 'stripe',
-        totalPaid: event.data.object.amount_total / 100
-      });
-      
-      console.log(`Bought item ${itemId} for ${itemPrice} Robux`);
-    }
-    res.json({ received: true });
-  } catch (e) {
-    console.error(e);
-    res.status(400).json({ error: e.message });
   }
 });
 
@@ -329,4 +485,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
