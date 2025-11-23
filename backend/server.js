@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const app = express();
 
-// IMPORTANT: Stripe webhook MUST come BEFORE express.json()
+// Stripe webhook MUST come BEFORE express.json()
 app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
   try {
     const event = stripe.webhooks.constructEvent(
