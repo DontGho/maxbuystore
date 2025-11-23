@@ -42,7 +42,15 @@ async function getItemInfo(url) {
   
   try {
     const r = await axios.get(`https://economy.roblox.com/v2/assets/${id}/details`);
-    return { id, price: r.data.PriceInRobux, creator: r.data.Creator, itemType: type };
+    const creator = r.data.Creator;
+    
+    return { 
+      id, 
+      price: r.data.PriceInRobux, 
+      creator: creator,
+      creatorId: creator.CreatorTargetId || creator.Id,
+      itemType: type 
+    };
   } catch (e) {
     return null;
   }
@@ -71,6 +79,28 @@ async function buyItem(itemId, price) {
   }
 }
 
+function logPurchase(data) {
+  const log = {
+    timestamp: new Date().toISOString(),
+    username: data.username,
+    amount: data.amount,
+    itemId: data.itemId,
+    itemPrice: data.itemPrice,
+    paymentMethod: data.method,
+    totalPaid: data.totalPaid
+  };
+  
+  const logFile = path.join(__dirname, 'purchases.json');
+  let logs = [];
+  
+  if (fs.existsSync(logFile)) {
+    logs = JSON.parse(fs.readFileSync(logFile, 'utf8'));
+  }
+  
+  logs.push(log);
+  fs.writeFileSync(logFile, JSON.stringify(logs, null, 2));
+}
+
 app.post('/api/verify-item', async (req, res) => {
   try {
     const { username, itemUrl } = req.body;
@@ -81,12 +111,15 @@ app.post('/api/verify-item', async (req, res) => {
     const item = await getItemInfo(itemUrl);
     if (!item) return res.json({ success: false, error: 'Invalid item link' });
     
-    if (item.creator.Id != uid && item.creator.CreatorTargetId != uid) {
-      return res.json({ success: false, error: 'Item not owned by this user' });
+    const creatorId = item.creatorId;
+    
+    if (creatorId != uid) {
+      return res.json({ success: false, error: `Item not owned by this user. Creator ID: ${creatorId}, User ID: ${uid}` });
     }
     
     res.json({ success: true, price: item.price, itemType: item.itemType });
   } catch (e) {
+    console.error(e);
     res.json({ success: false, error: 'Error verifying item' });
   }
 });
@@ -105,7 +138,9 @@ app.post('/api/create-payment', async (req, res) => {
     const item = await getItemInfo(itemUrl);
     if (!item) return res.json({ success: false, error: 'Invalid item link' });
     
-    if (item.creator.Id != uid && item.creator.CreatorTargetId != uid) {
+    const creatorId = item.creatorId;
+    
+    if (creatorId != uid) {
       return res.json({ success: false, error: 'Item not owned by you' });
     }
     
@@ -146,12 +181,41 @@ app.post('/api/create-payment', async (req, res) => {
   }
 });
 
+app.post('/api/purchase-history', async (req, res) => {
+  try {
+    const { username } = req.body;
+    const logFile = path.join(__dirname, 'purchases.json');
+    
+    if (!fs.existsSync(logFile)) {
+      return res.json({ purchases: [] });
+    }
+    
+    const logs = JSON.parse(fs.readFileSync(logFile, 'utf8'));
+    const userPurchases = logs.filter(l => l.username.toLowerCase() === username.toLowerCase());
+    
+    res.json({ purchases: userPurchases });
+  } catch (e) {
+    res.json({ purchases: [] });
+  }
+});
+
 app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
   try {
     const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
     if (event.type === 'checkout.session.completed') {
-      const { itemId, itemPrice } = event.data.object.metadata;
+      const { username, amount, itemId, itemPrice } = event.data.object.metadata;
+      
       await buyItem(itemId, itemPrice);
+      
+      logPurchase({
+        username,
+        amount,
+        itemId,
+        itemPrice,
+        method: 'stripe',
+        totalPaid: event.data.object.amount_total / 100
+      });
+      
       console.log(`Bought item ${itemId} for ${itemPrice} Robux`);
     }
     res.json({ received: true });
