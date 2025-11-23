@@ -8,66 +8,96 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
-const discordWebhook = process.env.DISCORD_WEBHOOK_URL;
-const ppEnv = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_SECRET);
+const c = process.env.ROBLOX_COOKIE;
+const ppEnv = new paypal.core.LiveEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_SECRET);
 const ppClient = new paypal.core.PayPalHttpClient(ppEnv);
-
-async function sendDiscordNotification(username, amount, method, price) {
-  if (!discordWebhook) return;
-  
-  try {
-    const embed = {
-      title: '✅ New Purchase',
-      color: 0x00ff00,
-      fields: [
-        { name: '👤 Username', value: username, inline: true },
-        { name: '💎 Robux', value: amount.toLocaleString(), inline: true },
-        { name: '💳 Method', value: method === 'stripe' ? 'Card' : 'PayPal', inline: true },
-        { name: '💵 Amount', value: `$${price.toFixed(2)}`, inline: true },
-        { name: '⏰ Time', value: new Date().toLocaleString(), inline: false }
-      ],
-      timestamp: new Date().toISOString(),
-      footer: { text: 'MaxBuy Purchase System' }
-    };
-
-    await axios.post(discordWebhook, {
-      embeds: [embed]
-    });
-  } catch (e) {
-    console.error('Discord notification error:', e.message);
-  }
-}
 
 async function getUid(u) {
   const r = await axios.post('https://users.roblox.com/v1/usernames/users', { usernames: [u] });
   return r.data.data[0]?.id;
 }
 
-app.post('/api/check-group', async (req, res) => {
+async function getShirtInfo(url) {
+  const match = url.match(/catalog\/(\d+)/);
+  if (!match) return null;
+  const id = match[1];
+  
   try {
-    const { username } = req.body;
+    const r = await axios.get(`https://economy.roblox.com/v2/assets/${id}/details`);
+    return { id, price: r.data.PriceInRobux, creator: r.data.Creator };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function buyShirt(shirtId, price) {
+  try {
+    const r = await axios.post(
+      `https://economy.roblox.com/v1/purchases/products/${shirtId}`,
+      { expectedCurrency: 1, expectedPrice: price, expectedSellerId: 0 },
+      { headers: { 'Cookie': `.ROBLOSECURITY=${c}`, 'Content-Type': 'application/json', 'x-csrf-token': '' }}
+    ).catch(async e => {
+      if (e.response?.headers['x-csrf-token']) {
+        const t = e.response.headers['x-csrf-token'];
+        return axios.post(
+          `https://economy.roblox.com/v1/purchases/products/${shirtId}`,
+          { expectedCurrency: 1, expectedPrice: price, expectedSellerId: 0 },
+          { headers: { 'Cookie': `.ROBLOSECURITY=${c}`, 'Content-Type': 'application/json', 'x-csrf-token': t }}
+        );
+      }
+      throw e;
+    });
+    return r.data;
+  } catch (e) {
+    throw new Error('Failed to buy shirt');
+  }
+}
+
+app.post('/api/verify-shirt', async (req, res) => {
+  try {
+    const { username, shirtUrl } = req.body;
+    
     const uid = await getUid(username);
     if (!uid) return res.json({ success: false, error: 'User not found' });
-
-    res.json({ success: true });
+    
+    const shirt = await getShirtInfo(shirtUrl);
+    if (!shirt) return res.json({ success: false, error: 'Invalid shirt link' });
+    
+    if (shirt.creator.Id != uid && shirt.creator.CreatorTargetId != uid) {
+      return res.json({ success: false, error: 'Shirt not owned by this user' });
+    }
+    
+    res.json({ success: true, price: shirt.price });
   } catch (e) {
-    res.json({ success: false, error: 'Error checking user' });
+    res.json({ success: false, error: 'Error verifying shirt' });
   }
 });
 
 app.post('/api/create-payment', async (req, res) => {
   try {
-    const { username, amount, method } = req.body;
-
+    const { username, amount, shirtUrl, method } = req.body;
+    
     if (amount < 1000) {
       return res.json({ success: false, error: 'Minimum 1,000 Robux' });
     }
-
+    
     const uid = await getUid(username);
     if (!uid) return res.json({ success: false, error: 'User not found' });
-
+    
+    const shirt = await getShirtInfo(shirtUrl);
+    if (!shirt) return res.json({ success: false, error: 'Invalid shirt link' });
+    
+    if (shirt.creator.Id != uid && shirt.creator.CreatorTargetId != uid) {
+      return res.json({ success: false, error: 'Shirt not owned by you' });
+    }
+    
+    const requiredPrice = Math.ceil(amount / 0.7);
+    if (shirt.price < requiredPrice) {
+      return res.json({ success: false, error: `Shirt price too low. Set to ${requiredPrice} Robux` });
+    }
+    
     const price = (amount / 1000) * 5.50;
-
+    
     if (method === 'stripe') {
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
@@ -75,7 +105,7 @@ app.post('/api/create-payment', async (req, res) => {
         mode: 'payment',
         success_url: `${req.protocol}://${req.get('host')}/success`,
         cancel_url: `${req.protocol}://${req.get('host')}/cancel`,
-        metadata: { username, amount, uid, price: price.toFixed(2) }
+        metadata: { username, amount, shirtUrl, shirtId: shirt.id, shirtPrice: shirt.price }
       });
       res.json({ success: true, url: session.url });
     } else if (method === 'paypal') {
@@ -84,9 +114,9 @@ app.post('/api/create-payment', async (req, res) => {
       request.requestBody({
         intent: 'CAPTURE',
         purchase_units: [{ amount: { currency_code: 'USD', value: price.toFixed(2) }, description: `${amount} Robux for ${username}` }],
-        application_context: {
-          return_url: `${req.protocol}://${req.get('host')}/success`,
-          cancel_url: `${req.protocol}://${req.get('host')}/cancel`
+        application_context: { 
+          return_url: `${req.protocol}://${req.get('host')}/success`, 
+          cancel_url: `${req.protocol}://${req.get('host')}/cancel` 
         }
       });
       const order = await ppClient.execute(request);
@@ -98,16 +128,17 @@ app.post('/api/create-payment', async (req, res) => {
   }
 });
 
-app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
   try {
     const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
     if (event.type === 'checkout.session.completed') {
-      const { username, amount, price } = event.data.object.metadata;
-      
-      await sendDiscordNotification(username, parseInt(amount), 'stripe', parseFloat(price));
+      const { shirtId, shirtPrice } = event.data.object.metadata;
+      await buyShirt(shirtId, shirtPrice);
+      console.log(`Bought shirt ${shirtId} for ${shirtPrice} Robux`);
     }
     res.json({ received: true });
   } catch (e) {
+    console.error(e);
     res.status(400).json({ error: e.message });
   }
 });
@@ -117,14 +148,7 @@ app.post('/webhook/paypal', async (req, res) => {
     const request = new paypal.orders.OrdersCaptureRequest(req.body.resource.id);
     const capture = await ppClient.execute(request);
     if (capture.result.status === 'COMPLETED') {
-      const match = capture.result.purchase_units[0].description.match(/(\d+) Robux for (\w+)/);
-      if (match) {
-        const amount = parseInt(match[1]);
-        const username = match[2];
-        const price = parseFloat(capture.result.purchase_units[0].amount.value);
-        
-        await sendDiscordNotification(username, amount, 'paypal', price);
-      }
+      console.log('PayPal payment completed - manually buy the shirt');
     }
     res.json({ received: true });
   } catch (e) {
