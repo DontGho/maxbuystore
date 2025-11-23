@@ -17,30 +17,48 @@ async function getUid(u) {
   return r.data.data[0]?.id;
 }
 
-async function getShirtInfo(url) {
-  const match = url.match(/catalog\/(\d+)/);
-  if (!match) return null;
-  const id = match[1];
+async function getItemInfo(url) {
+  let id;
+  let type;
+  
+  if (url.includes('game-pass') || url.includes('gamepass')) {
+    const match = url.match(/game-pass\/(\d+)|gamepass\/(\d+)/);
+    if (!match) return null;
+    id = match[1] || match[2];
+    type = 'Game Pass';
+  } else if (url.includes('catalog')) {
+    const match = url.match(/catalog\/(\d+)/);
+    if (!match) return null;
+    id = match[1];
+    type = 'Catalog Item';
+  } else if (url.includes('/library/')) {
+    const match = url.match(/library\/(\d+)/);
+    if (!match) return null;
+    id = match[1];
+    type = 'Asset';
+  } else {
+    return null;
+  }
   
   try {
     const r = await axios.get(`https://economy.roblox.com/v2/assets/${id}/details`);
-    return { id, price: r.data.PriceInRobux, creator: r.data.Creator };
+    return { id, price: r.data.PriceInRobux, creator: r.data.Creator, itemType: type };
   } catch (e) {
     return null;
   }
 }
 
-async function buyShirt(shirtId, price) {
+async function buyItem(itemId, price) {
   try {
     const r = await axios.post(
-      `https://economy.roblox.com/v1/purchases/products/${shirtId}`,
+      `https://economy.roblox.com/v1/purchases/products/${itemId}`,
       { expectedCurrency: 1, expectedPrice: price, expectedSellerId: 0 },
       { headers: { 'Cookie': `.ROBLOSECURITY=${c}`, 'Content-Type': 'application/json', 'x-csrf-token': '' }}
     ).catch(async e => {
       if (e.response?.headers['x-csrf-token']) {
         const t = e.response.headers['x-csrf-token'];
         return axios.post(
-          `https://economy.roblox.com/v1/purchases/products/${shirtId}`,
+          `https://economy.roblox.com/v1/purchases/products/${itemId}`,
           { expectedCurrency: 1, expectedPrice: price, expectedSellerId: 0 },
           { headers: { 'Cookie': `.ROBLOSECURITY=${c}`, 'Content-Type': 'application/json', 'x-csrf-token': t }}
         );
@@ -49,33 +67,33 @@ async function buyShirt(shirtId, price) {
     });
     return r.data;
   } catch (e) {
-    throw new Error('Failed to buy shirt');
+    throw new Error('Failed to buy item');
   }
 }
 
-app.post('/api/verify-shirt', async (req, res) => {
+app.post('/api/verify-item', async (req, res) => {
   try {
-    const { username, shirtUrl } = req.body;
+    const { username, itemUrl } = req.body;
     
     const uid = await getUid(username);
     if (!uid) return res.json({ success: false, error: 'User not found' });
     
-    const shirt = await getShirtInfo(shirtUrl);
-    if (!shirt) return res.json({ success: false, error: 'Invalid shirt link' });
+    const item = await getItemInfo(itemUrl);
+    if (!item) return res.json({ success: false, error: 'Invalid item link' });
     
-    if (shirt.creator.Id != uid && shirt.creator.CreatorTargetId != uid) {
-      return res.json({ success: false, error: 'Shirt not owned by this user' });
+    if (item.creator.Id != uid && item.creator.CreatorTargetId != uid) {
+      return res.json({ success: false, error: 'Item not owned by this user' });
     }
     
-    res.json({ success: true, price: shirt.price });
+    res.json({ success: true, price: item.price, itemType: item.itemType });
   } catch (e) {
-    res.json({ success: false, error: 'Error verifying shirt' });
+    res.json({ success: false, error: 'Error verifying item' });
   }
 });
 
 app.post('/api/create-payment', async (req, res) => {
   try {
-    const { username, amount, shirtUrl, method } = req.body;
+    const { username, amount, itemUrl, method } = req.body;
     
     if (amount < 1000) {
       return res.json({ success: false, error: 'Minimum 1,000 Robux' });
@@ -84,19 +102,19 @@ app.post('/api/create-payment', async (req, res) => {
     const uid = await getUid(username);
     if (!uid) return res.json({ success: false, error: 'User not found' });
     
-    const shirt = await getShirtInfo(shirtUrl);
-    if (!shirt) return res.json({ success: false, error: 'Invalid shirt link' });
+    const item = await getItemInfo(itemUrl);
+    if (!item) return res.json({ success: false, error: 'Invalid item link' });
     
-    if (shirt.creator.Id != uid && shirt.creator.CreatorTargetId != uid) {
-      return res.json({ success: false, error: 'Shirt not owned by you' });
+    if (item.creator.Id != uid && item.creator.CreatorTargetId != uid) {
+      return res.json({ success: false, error: 'Item not owned by you' });
     }
     
     const requiredPrice = Math.ceil(amount / 0.7);
-    if (shirt.price < requiredPrice) {
-      return res.json({ success: false, error: `Shirt price too low. Set to ${requiredPrice} Robux` });
+    if (item.price < requiredPrice) {
+      return res.json({ success: false, error: `Item price too low. Set to ${requiredPrice} Robux` });
     }
     
-    const price = (amount / 1000) * 5.50;
+    const price = (amount / 1000) * 7.39;
     
     if (method === 'stripe') {
       const session = await stripe.checkout.sessions.create({
@@ -105,7 +123,7 @@ app.post('/api/create-payment', async (req, res) => {
         mode: 'payment',
         success_url: `${req.protocol}://${req.get('host')}/success`,
         cancel_url: `${req.protocol}://${req.get('host')}/cancel`,
-        metadata: { username, amount, shirtUrl, shirtId: shirt.id, shirtPrice: shirt.price }
+        metadata: { username, amount, itemUrl, itemId: item.id, itemPrice: item.price }
       });
       res.json({ success: true, url: session.url });
     } else if (method === 'paypal') {
@@ -132,9 +150,9 @@ app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req,
   try {
     const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
     if (event.type === 'checkout.session.completed') {
-      const { shirtId, shirtPrice } = event.data.object.metadata;
-      await buyShirt(shirtId, shirtPrice);
-      console.log(`Bought shirt ${shirtId} for ${shirtPrice} Robux`);
+      const { itemId, itemPrice } = event.data.object.metadata;
+      await buyItem(itemId, itemPrice);
+      console.log(`Bought item ${itemId} for ${itemPrice} Robux`);
     }
     res.json({ received: true });
   } catch (e) {
@@ -173,15 +191,10 @@ app.post('/webhook/paypal', async (req, res) => {
       return res.status(400).json({ error: 'Invalid webhook' });
     }
     
-    const orderId = req.body.resource.id;
-    const request = new paypal.orders.OrdersCaptureRequest(orderId);
-    const capture = await ppClient.execute(request);
-    
-    if (capture.result.status === 'COMPLETED') {
-      console.log('PayPal payment completed - manually buy the shirt');
-    }
+    console.log('PayPal payment verified - manually buy the item');
     res.json({ received: true });
   } catch (e) {
+    console.error(e);
     res.status(400).json({ error: e.message });
   }
 });
