@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import { AlertCircle, CheckCircle, Loader2, ExternalLink, ArrowRight } from 'lucide-react';
 
 export default function App() {
