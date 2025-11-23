@@ -6,33 +6,6 @@ const path = require('path');
 const fs = require('fs');
 const app = express();
 
-// CRITICAL: Stripe webhook MUST come before express.json() to access raw body
-app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
-  try {
-    const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
-    if (event.type === 'checkout.session.completed') {
-      const { username, amount, itemId, itemPrice } = event.data.object.metadata;
-      
-      await buyItem(itemId, itemPrice);
-      
-      logPurchase({
-        username,
-        amount,
-        itemId,
-        itemPrice,
-        method: 'stripe',
-        totalPaid: event.data.object.amount_total / 100
-      });
-      
-      console.log(`Bought item ${itemId} for ${itemPrice} Robux`);
-    }
-    res.json({ received: true });
-  } catch (e) {
-    console.error(e);
-    res.status(400).json({ error: e.message });
-  }
-});
-
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
@@ -64,6 +37,7 @@ async function getItemInfo(url) {
     id = match[1] || match[2];
     type = 'Game Pass';
     
+    // For game passes, use the gamepass API to get the correct creator
     try {
       const r = await axios.get(`https://apis.roblox.com/game-passes/v1/game-passes/${id}/product-info`);
       return { 
@@ -170,7 +144,7 @@ app.post('/api/verify-user', async (req, res) => {
 
 app.post('/api/verify-item', async (req, res) => {
   try {
-    const { username, itemUrl, amount } = req.body;
+    const { username, itemUrl } = req.body;
     
     const uid = await getUid(username);
     if (!uid) return res.json({ success: false, error: 'User not found' });
@@ -182,16 +156,6 @@ app.post('/api/verify-item', async (req, res) => {
     
     if (creatorId != uid) {
       return res.json({ success: false, error: `Item not owned by this user. Creator ID: ${creatorId}, User ID: ${uid}` });
-    }
-    
-    if (amount) {
-      const requiredPrice = Math.ceil(parseInt(amount) / 0.7);
-      if (item.price !== requiredPrice) {
-        return res.json({ 
-          success: false, 
-          error: `Price mismatch! Item is set to ${item.price} R$ but should be ${requiredPrice} R$` 
-        });
-      }
     }
     
     res.json({ success: true, price: item.price, itemType: item.itemType });
@@ -222,9 +186,8 @@ app.post('/api/create-payment', async (req, res) => {
     }
     
     const requiredPrice = Math.ceil(amount / 0.7);
-    
-    if (item.price !== requiredPrice) {
-      return res.json({ success: false, error: `Item price must be exactly ${requiredPrice} Robux (currently ${item.price} Robux)` });
+    if (item.price < requiredPrice) {
+      return res.json({ success: false, error: `Item price too low. Set to ${requiredPrice} Robux` });
     }
     
     const price = (amount / 1000) * 7.39;
@@ -277,6 +240,32 @@ app.post('/api/purchase-history', async (req, res) => {
   }
 });
 
+app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
+  try {
+    const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
+    if (event.type === 'checkout.session.completed') {
+      const { username, amount, itemId, itemPrice } = event.data.object.metadata;
+      
+      await buyItem(itemId, itemPrice);
+      
+      logPurchase({
+        username,
+        amount,
+        itemId,
+        itemPrice,
+        method: 'stripe',
+        totalPaid: event.data.object.amount_total / 100
+      });
+      
+      console.log(`Bought item ${itemId} for ${itemPrice} Robux`);
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.post('/webhook/paypal', async (req, res) => {
   try {
     const webhookId = process.env.PAYPAL_WEBHOOK_ID;
@@ -313,68 +302,6 @@ app.post('/webhook/paypal', async (req, res) => {
     console.error(e);
     res.status(400).json({ error: e.message });
   }
-});
-
-app.get('/success', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Payment Successful - MaxBuy</title>
-      <link rel="icon" type="image/png" href="https://i.imgur.com/QqpLV9s.png">
-      <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 min-h-screen flex items-center justify-center p-6">
-      <div class="text-center">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-12 max-w-md" style="box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);">
-          <div class="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg class="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-          </div>
-          <h1 class="text-3xl font-bold text-white mb-4">Payment Successful!</h1>
-          <p class="text-zinc-400 mb-8">Your Robux is being processed and will arrive within 5-10 minutes.</p>
-          <a href="/" class="inline-block bg-red-600 hover:bg-red-500 text-white font-semibold px-8 py-3 rounded-lg transition" style="box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);">
-            Return Home
-          </a>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-app.get('/cancel', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Payment Cancelled - MaxBuy</title>
-      <link rel="icon" type="image/png" href="https://i.imgur.com/QqpLV9s.png">
-      <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 min-h-screen flex items-center justify-center p-6">
-      <div class="text-center">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-12 max-w-md" style="box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);">
-          <div class="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          </div>
-          <h1 class="text-3xl font-bold text-white mb-4">Payment Cancelled</h1>
-          <p class="text-zinc-400 mb-8">Your payment was cancelled. No charges were made.</p>
-          <a href="/" class="inline-block bg-red-600 hover:bg-red-500 text-white font-semibold px-8 py-3 rounded-lg transition" style="box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);">
-            Try Again
-          </a>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
 });
 
 app.get('*', (req, res) => {
