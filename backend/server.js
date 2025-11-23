@@ -160,13 +160,13 @@ app.post('/api/verify-item', async (req, res) => {
     
     // Check price if amount is provided
     if (amount) {
-      const requiredPrice = Math.ceil(amount / 0.7);
+      const requiredPrice = parseInt(amount);
       console.log(`Item price: ${item.price}, Required price: ${requiredPrice}`);
       
-      if (item.price < requiredPrice) {
+      if (item.price !== requiredPrice) {
         return res.json({ 
           success: false, 
-          error: `Item price too low! Current: ${item.price} R$ | Required: ${requiredPrice} R$`,
+          error: `Item price must be exactly ${requiredPrice} R$ (currently ${item.price} R$)`,
           currentPrice: item.price,
           requiredPrice: requiredPrice
         });
